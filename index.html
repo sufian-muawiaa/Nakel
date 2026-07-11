@@ -261,6 +261,61 @@ tr.neg td{color:var(--red);}
 </head>
 <body>
 
+<!-- ============================================================
+     ربط Firebase (اختياري) — للتزامن الحقيقي بين كل الأجهزة
+     يستخدم Realtime Database (يعمل ضمن خطة Spark المجانية بدون بطاقة دفع)
+     ------------------------------------------------------------
+     1) أنشئ مشروعاً مجانياً على https://console.firebase.google.com
+     2) من "Databases & Storage" فعّل "Realtime Database" (وضع Test mode مبدئياً)
+     3) من إعدادات المشروع → Web App، انسخ بيانات firebaseConfig (تشمل databaseURL)
+     4) الصق القيم الحقيقية بدل النصوص "PASTE_..." في الأسفل
+     5) ارفع الملف مجدداً — سيتحول التطبيق تلقائياً لاستخدام Firebase
+     بدون أي تعديل آخر. إن تُرك كما هو، يعمل التطبيق بالوضع المحلي كالمعتاد.
+     ============================================================ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCK33msN9nt8iRntunkAdMtco8G1Z_Im8Q",
+    authDomain: "nakel-3d246.firebaseapp.com",
+    databaseURL: "https://nakel-3d246-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "nakel-3d246",
+    storageBucket: "nakel-3d246.firebasestorage.app",
+    messagingSenderId: "457996465127",
+    appId: "1:457996465127:web:9649ab376c78fe2c1c4342"
+  };
+
+  const isConfigured = firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith("PASTE_");
+  window.__firebaseReadyFlag = false;
+
+  if(isConfigured){
+    try{
+      const app = initializeApp(firebaseConfig);
+      const db = getDatabase(app);
+
+      window.__firebaseGet = async function(key){
+        const r = ref(db, "nakl_kv/" + encodeURIComponent(key));
+        const snap = await get(r);
+        if(!snap.exists()) return null;
+        const data = snap.val();
+        return (data && data.value !== undefined) ? JSON.parse(data.value) : null;
+      };
+      window.__firebaseSet = async function(key, value){
+        const r = ref(db, "nakl_kv/" + encodeURIComponent(key));
+        await set(r, { value: JSON.stringify(value), updatedAt: Date.now() });
+        return true;
+      };
+
+      window.__firebaseReadyFlag = true;
+      console.log("✅ Firebase Realtime Database متصل — التزامن السحابي الحقيقي بين الأجهزة مُفعّل.");
+    }catch(e){
+      console.error("Firebase init failed:", e);
+      window.__firebaseReadyFlag = false;
+    }
+  }
+</script>
+
 <!-- ================= LOGIN ================= -->
 <div id="loginScreen">
   <div class="login-card bblock">
@@ -397,14 +452,14 @@ function esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); }
 /* ===================== Storage ===================== */
 function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
-/* window.storage (التخزين السحابي) متاح فقط عند معاينة الملف داخل واجهة Claude نفسها.
-   عند فتح الملف كموقع مستقل (مثل GitHub Pages) لا يوجد window.storage إطلاقاً،
-   لذلك نتحقق من توفره ونتحول تلقائياً إلى تخزين محلي داخل نفس المتصفح كبديل يعمل دائماً. */
+/* أولوية التخزين: Firebase (إن تم ربطه — تزامن حقيقي بين كل الأجهزة)
+   ← window.storage (يعمل فقط داخل معاينة Claude) ← تخزين محلي بالمتصفح (احتياطي أخير يعمل دائماً). */
 const CLOUD_AVAILABLE = (function(){
   try{ return !!(window.storage && typeof window.storage.get==='function' && typeof window.storage.set==='function'); }
   catch(e){ return false; }
 })();
-window._naklStorageMode = CLOUD_AVAILABLE ? 'cloud' : 'local';
+function firebaseReady(){ return !!window.__firebaseReadyFlag; }
+window._naklStorageMode = function(){ return firebaseReady() ? 'firebase' : (CLOUD_AVAILABLE ? 'cloud' : 'local'); };
 
 function localGet(key){
   try{ const raw = window.localStorage.getItem('nakl_'+key); return raw ? JSON.parse(raw) : null; }
@@ -412,43 +467,58 @@ function localGet(key){
 }
 function localSet(key, value){
   try{ window.localStorage.setItem('nakl_'+key, JSON.stringify(value)); return true; }
-  catch(e){ console.error('local storage set failed for', key, e); showToast('تعذّر الحفظ محلياً على هذا المتصفح', true); return false; }
+  catch(e){ console.error('local storage set failed for', key, e); return false; }
 }
 
-async function sGet(key, attempt){
-  if(!CLOUD_AVAILABLE) return localGet(key);
+async function claudeGet(key, attempt){
   attempt = attempt||1;
   try{
     const r = await window.storage.get(key, true);
     return r ? JSON.parse(r.value) : null;
   }catch(e){
     const msg = (e && e.message) || '';
-    // "key not found" style errors are expected for new keys; don't retry those
-    if(attempt < 3 && !/not found/i.test(msg)){
-      await wait(400*attempt);
-      return sGet(key, attempt+1);
-    }
+    if(attempt < 3 && !/not found/i.test(msg)){ await wait(400*attempt); return claudeGet(key, attempt+1); }
     return null;
   }
 }
-
-async function sSet(key, value, attempt){
-  if(value===undefined) value = null;
-  if(!CLOUD_AVAILABLE) return localSet(key, value);
+async function claudeSet(key, value, attempt){
   attempt = attempt||1;
   try{
     const res = await window.storage.set(key, JSON.stringify(value), true);
     if(!res) throw new Error('empty response');
     return true;
   }catch(e){
-    console.error('storage set failed for', key, e);
-    if(attempt < 3){
-      await wait(500*attempt);
-      return sSet(key, value, attempt+1);
-    }
-    showToast('تعذّر حفظ البيانات (خطأ مؤقت في الخادم) — حاول مجدداً بعد لحظات', true);
+    console.error('claude storage set failed for', key, e);
+    if(attempt < 3){ await wait(500*attempt); return claudeSet(key, value, attempt+1); }
     return false;
   }
+}
+
+async function sGet(key){
+  if(firebaseReady()){
+    try{ return await window.__firebaseGet(key); }
+    catch(e){ console.error('firebase get failed for', key, e); }
+  }
+  if(CLOUD_AVAILABLE){
+    const v = await claudeGet(key);
+    if(v !== null) return v;
+  }
+  return localGet(key);
+}
+
+async function sSet(key, value){
+  if(value===undefined) value = null;
+  if(firebaseReady()){
+    try{ const ok = await window.__firebaseSet(key, value); if(ok) return true; }
+    catch(e){ console.error('firebase set failed for', key, e); }
+  }
+  if(CLOUD_AVAILABLE){
+    const ok = await claudeSet(key, value);
+    if(ok) return true;
+  }
+  const ok = localSet(key, value);
+  if(!ok) showToast('تعذّر حفظ البيانات — تحقق من الاتصال', true);
+  return ok;
 }
 
 /* ===================== Theme ===================== */
@@ -1554,9 +1624,11 @@ function renderSettings(){
   <div class="card">
     <div class="section-title">حالة التخزين</div>
     <p style="font-size:12.5px;color:var(--muted);font-weight:600;line-height:1.9">
-      ${CLOUD_AVAILABLE
-        ? 'التخزين السحابي مفعّل حالياً — بياناتك تتزامن تلقائياً بين كل الأجهزة التي تسجّل بها الدخول بنفس رقم الهاتف.'
-        : '⚠️ أنت تفتح هذا الملف كموقع مستقل (مثل GitHub Pages)، وفي هذا الوضع لا يتوفر تخزين سحابي حقيقي. البيانات تُحفظ محلياً داخل هذا المتصفح على هذا الجهاز فقط، ولن تظهر تلقائياً عند فتح نفس الرابط من جهاز أو متصفح آخر. مشاركة الحساب بين عدة سائقين من أجهزة مختلفة تتطلب خادماً حقيقياً (مثل Firebase أو Supabase) — أخبرني إن أردت ربط أحدهما لاحقاً.'}
+      ${firebaseReady()
+        ? '🟢 مرتبط بـ Firebase — تزامن سحابي حقيقي بين كل الأجهزة والمتصفحات تلقائياً.'
+        : CLOUD_AVAILABLE
+          ? 'التخزين السحابي (معاينة Claude) مفعّل حالياً — بياناتك تتزامن بين الأجهزة التي تسجّل بها الدخول بنفس رقم الهاتف داخل هذه المعاينة فقط.'
+          : '⚠️ أنت تفتح هذا الملف كموقع مستقل (مثل GitHub Pages) بدون ربط Firebase. البيانات تُحفظ محلياً داخل هذا المتصفح على هذا الجهاز فقط، ولن تظهر تلقائياً عند فتح نفس الرابط من جهاز أو متصفح آخر. لتفعيل تزامن حقيقي بين كل الأجهزة، اربط المشروع بـ Firebase.'}
     </p>
   </div>
   <div class="card">
@@ -1671,15 +1743,20 @@ function renderDriverAdvances(){
 
 /* ===================== Init ===================== */
 document.getElementById('loginPhone').addEventListener('keydown', e=>{ if(e.key==='Enter') handlePhoneSubmit(); });
-(function initStorageNotice(){
+function refreshStorageNotice(){
   const el = document.getElementById('storageModeNotice');
   if(!el) return;
-  if(CLOUD_AVAILABLE){
-    el.textContent = '⚡ التخزين السحابي مفعّل — بياناتك تتزامن بين كل الأجهزة.';
+  if(firebaseReady()){
+    el.textContent = '🟢 مرتبط بـ Firebase — تزامن سحابي حقيقي بين كل الأجهزة.';
+  }else if(CLOUD_AVAILABLE){
+    el.textContent = '⚡ التخزين السحابي (معاينة Claude) مفعّل — يتزامن داخل هذه المعاينة فقط.';
   }else{
-    el.innerHTML = '⚠️ التخزين السحابي غير متاح في هذه النسخة (موقع مستقل) — البيانات تُحفظ محلياً في هذا المتصفح فقط ولا تتزامن تلقائياً مع أجهزة أخرى.';
+    el.innerHTML = '⚠️ وضع محلي: البيانات تُحفظ في هذا المتصفح فقط ولا تتزامن مع أجهزة أخرى (اربط Firebase من الإعدادات لتفعيل التزامن الحقيقي).';
   }
-})();
+}
+refreshStorageNotice();
+document.addEventListener('DOMContentLoaded', refreshStorageNotice);
+window.addEventListener('load', refreshStorageNotice);
 
 /* Global safety net: never let a raw error reach the user as an uncaught exception. */
 window.addEventListener('unhandledrejection', function(ev){
