@@ -136,6 +136,21 @@ label{display:block;font-size:12px;font-weight:700;margin-bottom:6px;color:var(-
 .login-sub{font-size:13px;color:var(--muted);margin:18px 0;line-height:1.85;font-weight:500;}
 .login-err{background:var(--red-bg);color:var(--red);font-size:13px;font-weight:700;padding:11px 14px;border-radius:var(--radius-sm);margin-bottom:14px;}
 .login-toggle{text-align:center;margin-top:16px;font-size:12px;color:var(--muted);font-weight:600;line-height:1.9;}
+.perm-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);}
+.perm-chip{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:5px 10px;cursor:pointer;}
+.perm-chip input{margin:0;}
+.phone-row{display:flex;gap:8px;direction:ltr;}
+.phone-row .country-select{flex:0 0 110px;border-radius:12px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-weight:700;padding:0 8px;text-align:center;}
+.phone-row input{flex:1;text-align:left;}
+.waiting-spinner{width:40px;height:40px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--primary);margin:18px auto;animation:spin 0.9s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#deviceApprovalBanner{position:fixed;inset:0;z-index:9999;background:rgba(10,16,32,.55);display:flex;align-items:center;justify-content:center;padding:16px;}
+#deviceApprovalBanner.hidden{display:none;}
+.device-approval-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+.device-approval-title{font-weight:900;font-size:16px;margin-bottom:8px;}
+.device-approval-body{font-size:13px;color:var(--muted);line-height:1.8;margin-bottom:16px;}
+.device-approval-actions{display:flex;gap:10px;}
+.device-approval-actions .btn{flex:1;}
 .login-loading{text-align:center;font-size:12.5px;color:var(--muted);margin-top:12px;font-weight:600;}
 
 #appScreen,#driverScreen{min-height:100vh;display:flex;flex-direction:column;}
@@ -258,6 +273,14 @@ tr.neg td{color:var(--red);}
 }
 
 </style>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2454C7">
+<!-- خرائط Leaflet المجانية (OpenStreetMap) بدون مفتاح API -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -274,7 +297,8 @@ tr.neg td{color:var(--red);}
      ============================================================ -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+  import { getDatabase, ref, get, set, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCK33msN9nt8iRntunkAdMtco8G1Z_Im8Q",
@@ -307,6 +331,23 @@ tr.neg td{color:var(--red);}
         return true;
       };
 
+      window.__firebaseListen = function(key, cb){
+        const r = ref(db, "nakl_kv/" + encodeURIComponent(key));
+        onValue(r, (snap)=>{
+          const data = snap.exists() ? snap.val() : null;
+          const value = (data && data.value !== undefined) ? JSON.parse(data.value) : null;
+          cb(value);
+        });
+        return r;
+      };
+      window.__firebaseUnlisten = function(refObj){ if(refObj) off(refObj); };
+
+      /* تسجيل دخول مجهول مجاني (لا يحتاج بطاقة دفع ولا رقم هاتف) — يُستخدم فقط
+         لمنع الوصول العشوائي غير الموثّق لقاعدة البيانات عبر قواعد الأمان
+         auth != null، وهو أول خط حماية مجاني قبل تفعيل التحقق الحقيقي بالهاتف. */
+      const auth = getAuth(app);
+      signInAnonymously(auth).catch(e=>console.error('anonymous auth failed:', e));
+
       window.__firebaseReadyFlag = true;
       console.log("✅ Firebase Realtime Database متصل — التزامن السحابي الحقيقي بين الأجهزة مُفعّل.");
     }catch(e){
@@ -329,10 +370,13 @@ tr.neg td{color:var(--red);}
     <div id="loginError" class="login-err hidden"></div>
 
     <div id="loginStepPhone">
-      <p class="login-sub">أدخل رقم الهاتف للدخول. حساب المسؤول يملك كل الصلاحيات، وحسابات السائقين تُنشأ من داخل النظام وتفتح تطبيق السائق تلقائياً.</p>
+      <p class="login-sub" id="loginIntroText">أدخل رقم الهاتف للدخول. حساب المسؤول يملك كل الصلاحيات، وحسابات السائقين تُنشأ من داخل النظام أو عبر رابط دعوة.</p>
       <div class="field">
         <label>رقم الهاتف</label>
-        <input type="tel" id="loginPhone" placeholder="07xxxxxxxxx" inputmode="numeric">
+        <div class="phone-row">
+          <select id="loginCountry" class="country-select"></select>
+          <input type="tel" id="loginPhone" placeholder="7xxxxxxxx" inputmode="numeric">
+        </div>
       </div>
       <button class="btn btn-y btn-block" onclick="handlePhoneSubmit()">دخول</button>
       <div id="loginLoading" class="login-loading hidden">جارِ التحقق...</div>
@@ -346,8 +390,34 @@ tr.neg td{color:var(--red);}
       <button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="showLoginStep('phone')">رجوع</button>
     </div>
 
+    <div id="loginStepJoin" class="hidden">
+      <p class="login-sub">هذا الرقم غير مسجّل، وأنت مدعوّ للانضمام إلى <b id="joinCompanyName">—</b> بصلاحيات محدودة.</p>
+      <div class="field"><label>اسمك</label><input type="text" id="joinUserName" placeholder="اسمك الكامل"></div>
+      <button class="btn btn-y btn-block" onclick="handleJoinTeam()">انضمام إلى فريق العمل</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="showLoginStep('phone')">رجوع</button>
+    </div>
+
+    <div id="loginStepWaiting" class="hidden">
+      <p class="login-sub">جارٍ الدخول من جهاز جديد. يجب تأكيد السماح من أحد أجهزتك الأخرى المسجّلة دخول بنفس الرقم.</p>
+      <div class="waiting-spinner"></div>
+      <p class="login-sub" id="waitingStatusText">بانتظار الموافقة...</p>
+      <button class="btn btn-ghost btn-block" onclick="cancelDeviceWait()">إلغاء</button>
+    </div>
+
     <div class="login-toggle">تسجيل الدخول برقم الهاتف فقط — بدون كلمة مرور.</div>
     <div class="login-toggle" id="storageModeNotice"></div>
+  </div>
+</div>
+
+<!-- طلب موافقة جهاز جديد يظهر فوق أي شاشة داخل التطبيق -->
+<div id="deviceApprovalBanner" class="hidden">
+  <div class="device-approval-card">
+    <div class="device-approval-title">🔐 محاولة دخول من جهاز جديد</div>
+    <div class="device-approval-body">جهاز باسم "<span id="devApprovalLabel">—</span>" يحاول الدخول لحسابك بنفس رقم هاتفك. اسمح بذلك فقط إن كنت أنت من يحاول الدخول.</div>
+    <div class="device-approval-actions">
+      <button class="btn btn-y" onclick="respondDeviceRequest(true)">سماح</button>
+      <button class="btn btn-ghost" onclick="respondDeviceRequest(false)">رفض</button>
+    </div>
   </div>
 </div>
 
@@ -359,7 +429,7 @@ tr.neg td{color:var(--red);}
       <div class="topbar-mark">نل</div>
       <div>
         <div class="topbar-title" id="topbarCompanyName">—</div>
-        <div class="topbar-sub">لوحة المسؤول</div>
+        <div class="topbar-sub" id="topbarRoleLabel">لوحة المسؤول</div>
       </div>
     </div>
     <div class="topbar-right">
@@ -380,6 +450,8 @@ tr.neg td{color:var(--red);}
       <button data-view="payroll" onclick="showView('payroll')">◆ الرواتب</button>
       <button data-view="reports" onclick="showView('reports')">◆ التقارير</button>
       <button data-view="users" onclick="showView('users')">◆ المستخدمون والصلاحيات</button>
+      <button data-view="team" onclick="showView('team')">◆ الفريق ودعوات العمل</button>
+      <button data-view="tracking" onclick="showView('tracking')">◆ التتبع المباشر GPS</button>
       <button data-view="settings" onclick="showView('settings')">◆ الإعدادات</button>
       <div class="sidebar-tag" id="sidebarAccountTag"></div>
     </div>
@@ -438,6 +510,68 @@ const MAINT_TYPES = {periodic:'دورية', emergency:'طارئة', preventive:'
 
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function normalizePhone(p){ return (p||'').replace(/[^0-9+]/g,''); }
+
+/* ===================== رموز الدول ===================== */
+const COUNTRY_CODES = [
+  {c:'+964',n:'العراق'},{c:'+966',n:'السعودية'},{c:'+971',n:'الإمارات'},{c:'+965',n:'الكويت'},
+  {c:'+974',n:'قطر'},{c:'+973',n:'البحرين'},{c:'+968',n:'عُمان'},{c:'+962',n:'الأردن'},
+  {c:'+961',n:'لبنان'},{c:'+963',n:'سوريا'},{c:'+970',n:'فلسطين'},{c:'+20',n:'مصر'},
+  {c:'+218',n:'ليبيا'},{c:'+216',n:'تونس'},{c:'+213',n:'الجزائر'},{c:'+212',n:'المغرب'},
+  {c:'+249',n:'السودان'},{c:'+967',n:'اليمن'},{c:'+90',n:'تركيا'},{c:'+98',n:'إيران'},
+  {c:'+1',n:'أمريكا/كندا'},{c:'+44',n:'بريطانيا'},{c:'+49',n:'ألمانيا'},{c:'+33',n:'فرنسا'},
+  {c:'+91',n:'الهند'},{c:'+92',n:'باكستان'},{c:'+86',n:'الصين'}
+];
+function populateCountrySelect(){
+  const sel = document.getElementById('loginCountry');
+  if(!sel || sel.options.length) return;
+  COUNTRY_CODES.forEach(x=>{
+    const opt = document.createElement('option');
+    opt.value = x.c; opt.textContent = x.c+' '+x.n;
+    sel.appendChild(opt);
+  });
+  sel.value = '+964';
+}
+
+/* ===================== هوية الجهاز ===================== */
+function getDeviceId(){
+  let id = localGet('nakel_device_id');
+  if(!id){ id = uid()+uid(); localSet('nakel_device_id', id); }
+  return id;
+}
+function getDeviceLabel(){
+  let label = localGet('nakel_device_label');
+  if(label) return label;
+  const ua = navigator.userAgent||'';
+  let os = 'جهاز غير معروف';
+  if(/android/i.test(ua)) os='أندرويد';
+  else if(/iphone|ipad/i.test(ua)) os='آيفون/آيباد';
+  else if(/windows/i.test(ua)) os='ويندوز';
+  else if(/mac/i.test(ua)) os='ماك';
+  else if(/linux/i.test(ua)) os='لينكس';
+  label = os+' — '+new Date().toLocaleDateString('ar');
+  localSet('nakel_device_label', label);
+  return label;
+}
+
+/* ===================== استماع لحظي (Firebase أو Polling احتياطي) ===================== */
+function sListen(key, cb){
+  if(firebaseReady()){
+    const refObj = window.__firebaseListen(key, cb);
+    return { stop(){ window.__firebaseUnlisten(refObj); } };
+  }
+  // احتياطي: فحص دوري كل 3 ثوانٍ عند عدم توفر Firebase (لكل مستمع مؤقّته الخاص المستقل)
+  let stopped=false;
+  let last = undefined;
+  let timerId = null;
+  const tick = async ()=>{
+    if(stopped) return;
+    const v = await sGet(key);
+    if(JSON.stringify(v)!==JSON.stringify(last)){ last=v; cb(v); }
+    if(!stopped) timerId=setTimeout(tick, 3000);
+  };
+  tick();
+  return { stop(){ stopped=true; if(timerId) clearTimeout(timerId); } };
+}
 function fmt(n){ n=Number(n)||0; return n.toLocaleString('en-US',{maximumFractionDigits:0}); }
 function fmtDate(d){ if(!d) return '—'; try{ return new Date(d).toLocaleDateString('ar-EG',{year:'numeric',month:'short',day:'numeric'}); }catch(e){ return d; } }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -447,7 +581,7 @@ function showToast(msg, isErr){
   const t=document.createElement('div'); t.className='toast'+(isErr?' err':''); t.textContent=msg;
   root.appendChild(t); setTimeout(()=>t.remove(),2600);
 }
-function esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); }
+function esc(s){ return (s||'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ===================== Storage ===================== */
 function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -534,21 +668,43 @@ function toggleTheme(){
 function showLoginStep(step){
   document.getElementById('loginStepPhone').classList.toggle('hidden', step!=='phone');
   document.getElementById('loginStepNew').classList.toggle('hidden', step!=='new');
+  document.getElementById('loginStepJoin').classList.toggle('hidden', step!=='join');
+  document.getElementById('loginStepWaiting').classList.toggle('hidden', step!=='waiting');
   document.getElementById('loginError').classList.add('hidden');
 }
 function loginErr(msg){ const el=document.getElementById('loginError'); el.textContent=msg; el.classList.remove('hidden'); }
 let pendingPhone=null;
+let pendingInvite=null;
+
+function getInviteFromUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const accountId = params.get('invite_a');
+  const token = params.get('invite_t');
+  return (accountId && token) ? {accountId, token} : null;
+}
 
 async function handlePhoneSubmit(){
-  const phone = normalizePhone(document.getElementById('loginPhone').value.trim());
-  if(phone.length<7){ loginErr('أدخل رقم هاتف صحيح.'); return; }
+  const cc = document.getElementById('loginCountry').value || '+964';
+  const local = document.getElementById('loginPhone').value.trim().replace(/^0+/, '');
+  if(local.replace(/\D/g,'').length<6){ loginErr('أدخل رقم هاتف صحيح.'); return; }
+  const phone = normalizePhone(cc + local);
   document.getElementById('loginLoading').classList.remove('hidden');
   const mapping = await sGet('account_by_phone:'+phone);
   document.getElementById('loginLoading').classList.add('hidden');
+  pendingPhone = phone;
   if(mapping && mapping.accountId){
-    await enterAccount(phone, mapping.accountId);
+    await tryEnterExistingAccount(phone, mapping.accountId);
   }else{
-    pendingPhone=phone;
+    const invite = getInviteFromUrl();
+    if(invite){
+      const inviteAccount = await sGet('account:'+invite.accountId);
+      if(inviteAccount && inviteAccount.inviteToken===invite.token){
+        pendingInvite = invite;
+        document.getElementById('joinCompanyName').textContent = inviteAccount.companyName;
+        showLoginStep('join');
+        return;
+      }
+    }
     showLoginStep('new');
   }
 }
@@ -558,15 +714,135 @@ async function handleCreateAccount(){
   const ownerName = document.getElementById('newOwnerName').value.trim();
   if(!companyName || !ownerName){ loginErr('يرجى تعبئة اسم الشركة واسمك.'); return; }
   const accountId = uid();
-  const account = {accountId, companyName, ownerPhone:pendingPhone, ownerName, createdAt:Date.now(), openingCashBalance:0};
-  const users = [{id:uid(), phone:pendingPhone, name:ownerName, role:'admin', driverId:null, active:true}];
+  const account = {accountId, companyName, ownerPhone:pendingPhone, ownerName, createdAt:Date.now(), openingCashBalance:0, inviteToken:uid(), gpsTrackingEnabled:false};
+  const users = [{id:uid(), phone:pendingPhone, name:ownerName, role:'admin', driverId:null, active:true, permissions:null}];
   await sSet('account:'+accountId, account);
   await sSet('account_by_phone:'+pendingPhone, {accountId});
   await sSet('users:'+accountId, users);
   for(const k of ['customers','drivers','vehicles','trips','fuelEntries','maintenanceEntries','invoices','advances','cashEntries','payrollRuns']){
     await sSet(k+':'+accountId, []);
   }
+  const deviceId = getDeviceId();
+  await sSet('device_state:'+accountId+':'+pendingPhone, {authorized:{[deviceId]:{label:getDeviceLabel(), addedAt:Date.now()}}, pending:{}});
   await enterAccount(pendingPhone, accountId);
+}
+
+const DEFAULT_MEMBER_PERMISSIONS = {dashboard:false, trips:true, customers:true, drivers:false, vehicles:false,
+  fleetops:false, invoices:false, cash:false, payroll:false, reports:false, users:false, team:false, tracking:false, settings:false};
+
+async function handleJoinTeam(){
+  const name = document.getElementById('joinUserName').value.trim();
+  if(!name){ loginErr('يرجى إدخال اسمك.'); return; }
+  if(!pendingInvite){ loginErr('رابط الدعوة غير صالح. ارجع وأعد المحاولة.'); return; }
+  const accountId = pendingInvite.accountId;
+  document.getElementById('loginLoading').classList.remove('hidden');
+  const account = await sGet('account:'+accountId);
+  if(!account || account.inviteToken!==pendingInvite.token){
+    document.getElementById('loginLoading').classList.add('hidden');
+    loginErr('رابط الدعوة غير صالح أو أُلغي من قِبل صاحب الحساب.'); return;
+  }
+  const users = (await sGet('users:'+accountId)) || [];
+  if(users.some(u=>u.phone===pendingPhone)){
+    document.getElementById('loginLoading').classList.add('hidden');
+    loginErr('هذا الرقم مسجّل بالفعل ضمن هذا الحساب.'); return;
+  }
+  users.push({id:uid(), phone:pendingPhone, name, role:'member', driverId:null, active:true,
+    permissions:{...DEFAULT_MEMBER_PERMISSIONS}, isFieldWorker:true, invitedViaLink:true});
+  await sSet('users:'+accountId, users);
+  await sSet('account_by_phone:'+pendingPhone, {accountId});
+  const deviceId = getDeviceId();
+  await sSet('device_state:'+accountId+':'+pendingPhone, {authorized:{[deviceId]:{label:getDeviceLabel(), addedAt:Date.now()}}, pending:{}});
+  await enterAccount(pendingPhone, accountId);
+}
+
+/* ===================== موافقة الأجهزة الجديدة (بديل مجاني عن SMS) ===================== */
+async function tryEnterExistingAccount(phone, accountId){
+  const deviceId = getDeviceId();
+  const key = 'device_state:'+accountId+':'+phone;
+  const devState = (await sGet(key)) || {authorized:{}, pending:{}};
+  devState.authorized = devState.authorized || {};
+  devState.pending = devState.pending || {};
+  if(devState.authorized[deviceId]){
+    await enterAccount(phone, accountId);
+    return;
+  }
+  devState.pending[deviceId] = {label:getDeviceLabel(), requestedAt:Date.now(), status:'pending'};
+  await sSet(key, devState);
+  showLoginStep('waiting');
+  startWaitingForApproval(phone, accountId, deviceId);
+}
+
+let _waitListener=null;
+function startWaitingForApproval(phone, accountId, deviceId){
+  document.getElementById('waitingStatusText').textContent='بانتظار الموافقة من جهازك الآخر المسجّل دخول بنفس الرقم...';
+  if(_waitListener){ _waitListener.stop(); _waitListener=null; }
+  _waitListener = sListen('device_state:'+accountId+':'+phone, (devState)=>{
+    if(!devState) return;
+    if((devState.authorized||{})[deviceId]){
+      _waitListener.stop(); _waitListener=null;
+      enterAccount(phone, accountId);
+      return;
+    }
+    const p = (devState.pending||{})[deviceId];
+    if(p && p.status==='denied'){
+      _waitListener.stop(); _waitListener=null;
+      document.getElementById('waitingStatusText').textContent='تم رفض طلب الدخول من هذا الجهاز. أعد المحاولة أو تواصل مع صاحب الرقم.';
+    }
+  });
+}
+function cancelDeviceWait(){
+  if(_waitListener){ _waitListener.stop(); _waitListener=null; }
+  showLoginStep('phone');
+}
+
+let _incomingListener=null;
+let _seenPendingIds = new Set();
+function startIncomingDeviceRequestListener(){
+  if(!state.phone || !state.accountId) return;
+  if(_incomingListener){ _incomingListener.stop(); _incomingListener=null; }
+  _seenPendingIds = new Set();
+  const myDeviceId = getDeviceId();
+  _incomingListener = sListen('device_state:'+state.accountId+':'+state.phone, (devState)=>{
+    if(!devState) return;
+    const pending = devState.pending || {};
+    for(const devId in pending){
+      if(devId===myDeviceId) continue;
+      if(pending[devId].status!=='pending') continue;
+      if(_seenPendingIds.has(devId)) continue;
+      _seenPendingIds.add(devId);
+      showDeviceApprovalBanner(devId, pending[devId].label);
+    }
+    // نظّف قائمة "شوهد سابقاً" من أي طلب لم يعد pending (رُفض/قُبل) حتى تُقبل إعادة محاولته لاحقاً
+    for(const seenId of Array.from(_seenPendingIds)){
+      const p = pending[seenId];
+      if(!p || p.status!=='pending') _seenPendingIds.delete(seenId);
+    }
+  });
+}
+let _currentApprovalDeviceId=null;
+function showDeviceApprovalBanner(deviceId, label){
+  _currentApprovalDeviceId = deviceId;
+  document.getElementById('devApprovalLabel').textContent = label||'جهاز غير معروف';
+  document.getElementById('deviceApprovalBanner').classList.remove('hidden');
+}
+async function respondDeviceRequest(allow){
+  const deviceId = _currentApprovalDeviceId;
+  document.getElementById('deviceApprovalBanner').classList.add('hidden');
+  if(!deviceId || !state.accountId) return;
+  const key = 'device_state:'+state.accountId+':'+state.phone;
+  const devState = (await sGet(key)) || {authorized:{}, pending:{}};
+  devState.pending = devState.pending || {};
+  devState.authorized = devState.authorized || {};
+  if(allow){
+    const label = (devState.pending[deviceId] && devState.pending[deviceId].label) || 'جهاز';
+    devState.authorized[deviceId] = {label, addedAt:Date.now()};
+    delete devState.pending[deviceId];
+  }else if(devState.pending[deviceId]){
+    devState.pending[deviceId].status='denied';
+  }
+  await sSet(key, devState);
+  _seenPendingIds.delete(deviceId);
+  _currentApprovalDeviceId=null;
 }
 
 async function enterAccount(phone, accountId){
@@ -580,6 +856,10 @@ async function enterAccount(phone, accountId){
     return;
   }
   state.phone=phone; state.accountId=accountId; state.account=account; state.role=me.role; state.myDriverId=me.driverId; state.users=users;
+  state.permissions = me.permissions || null;
+  state.isFieldWorker = !!me.isFieldWorker;
+  startIncomingDeviceRequestListener();
+  if(state.isFieldWorker && state.role!=='admin') startGpsAutoTracking();
   state.customers=(await sGet('customers:'+accountId))||[];
   state.drivers=(await sGet('drivers:'+accountId))||[];
   state.vehicles=(await sGet('vehicles:'+accountId))||[];
@@ -597,20 +877,24 @@ async function enterAccount(phone, accountId){
   document.getElementById('loginLoading').classList.add('hidden');
   document.getElementById('loginScreen').classList.add('hidden');
 
-  if(state.role==='admin'){
+  if(state.role==='admin' || state.role==='member'){
     document.getElementById('appScreen').classList.remove('hidden');
     document.getElementById('topbarCompanyName').textContent = account.companyName;
     document.getElementById('sidebarAccountTag').innerHTML = 'مسجّل باسم<br><b style="color:var(--text)">'+me.name+'</b>';
-    showView('dashboard');
+    applyPermissionFiltering();
+    showView(state.role==='admin' ? 'dashboard' : 'trips');
   }else{
     document.getElementById('driverScreen').classList.remove('hidden');
     document.getElementById('driverTopCompany').textContent = account.companyName;
     showDriverView('home');
+    startGpsAutoTracking();
   }
 }
 
 function logout(){
-  Object.assign(state, {phone:null, accountId:null, account:null, role:null, myDriverId:null, users:[], customers:[], drivers:[], vehicles:[], trips:[], fuelEntries:[], maintenanceEntries:[], invoices:[], advances:[], cashEntries:[], payrollRuns:[]});
+  if(_incomingListener){ _incomingListener.stop(); _incomingListener=null; }
+  stopGpsAutoTracking();
+  Object.assign(state, {phone:null, accountId:null, account:null, role:null, myDriverId:null, permissions:null, isFieldWorker:false, users:[], customers:[], drivers:[], vehicles:[], trips:[], fuelEntries:[], maintenanceEntries:[], invoices:[], advances:[], cashEntries:[], payrollRuns:[]});
   document.getElementById('appScreen').classList.add('hidden');
   document.getElementById('driverScreen').classList.add('hidden');
   document.getElementById('loginScreen').classList.remove('hidden');
@@ -663,15 +947,33 @@ function splitBarHTML(items){
 
 /* ===================== Router ===================== */
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); }
+function canAccessView(view){
+  if(state.role==='admin') return true;
+  if(!state.permissions) return true;
+  return !!state.permissions[view];
+}
 function showView(view){
+  if(!canAccessView(view)){
+    const firstAllowed = Object.keys(state.permissions||{}).find(k=>state.permissions[k]);
+    view = firstAllowed || 'trips';
+  }
+  if(state.currentView==='tracking' && view!=='tracking') stopTrackingListeners();
   state.currentView=view;
   document.querySelectorAll('.sidebar button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   document.getElementById('sidebar').classList.remove('open');
   const R = {dashboard:renderDashboard, trips:renderTrips, customers:renderCustomers, drivers:renderDrivers,
     vehicles:renderVehicles, fleetops:renderFleetOps, invoices:renderInvoices, cash:renderCash,
-    payroll:renderPayroll, reports:renderReports, users:renderUsers, settings:renderSettings};
+    payroll:renderPayroll, reports:renderReports, users:renderUsers, settings:renderSettings,
+    team:renderTeam, tracking:renderTracking};
   (R[view]||renderDashboard)();
   document.getElementById('mainContent').scrollTop=0;
+}
+function applyPermissionFiltering(){
+  document.querySelectorAll('#appScreen .sidebar button[data-view]').forEach(b=>{
+    const v = b.getAttribute('data-view');
+    b.classList.toggle('hidden', !canAccessView(v));
+  });
+  document.getElementById('topbarRoleLabel') && (document.getElementById('topbarRoleLabel').textContent = state.role==='admin' ? 'لوحة المسؤول' : 'عضو فريق — صلاحيات محدودة');
 }
 
 /* ===================== Dashboard ===================== */
@@ -1554,6 +1856,7 @@ function renderReportBody(){
 
 /* ===================== Users & permissions (admin only) ===================== */
 function renderUsers(){
+  if(state.role!=='admin'){ document.getElementById('mainContent').innerHTML='<div class="card">هذا القسم متاح للمسؤول فقط.</div>'; return; }
   const isOwner = state.account.ownerPhone===state.phone;
   const admins = state.users.filter(u=>u.role==='admin');
   const driverUsers = state.users.filter(u=>u.role==='driver');
@@ -1610,6 +1913,152 @@ async function removeUser(id){
   state.users = state.users.filter(x=>x.id!==id);
   await persist.users();
   showToast('تم إلغاء الوصول'); renderUsers();
+}
+
+/* ===================== الفريق ودعوات العمل ===================== */
+/* الأقسام القابلة لمنحها للأعضاء فقط. المستخدمون/الفريق/التتبع مقفلة دوماً على المسؤول
+   بغض النظر عن أي صلاحية (حماية من تصعيد الصلاحيات)، فلا تُعرض كخيار قابل للمنح. */
+const PERMISSION_LABELS = {
+  dashboard:'لوحة التحكم', trips:'الرحلات', customers:'العملاء', drivers:'السائقون والعهد',
+  vehicles:'الآليات', fleetops:'الصيانة والوقود', invoices:'الفواتير والتحصيل', cash:'الحركة المالية',
+  payroll:'الرواتب', reports:'التقارير', settings:'الإعدادات'
+};
+function inviteLinkUrl(){
+  const base = window.location.origin + window.location.pathname;
+  return base + '?invite_a=' + encodeURIComponent(state.accountId) + '&invite_t=' + encodeURIComponent(state.account.inviteToken);
+}
+function renderTeam(){
+  if(state.role!=='admin'){ document.getElementById('mainContent').innerHTML='<div class="card">هذا القسم متاح للمسؤول فقط.</div>'; return; }
+  const members = state.users.filter(u=>u.role==='member');
+  document.getElementById('mainContent').innerHTML = `
+  <div class="page-head"><div><div class="page-title disp">الفريق ودعوات العمل</div><div class="page-sub">شارك رابط الدعوة مع عمالك أو سائقيك ليسجّلوا الدخول بأنفسهم بصلاحيات محدودة تحدّدها أنت</div></div></div>
+
+  <div class="card">
+    <div class="section-title">رابط الدعوة</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input readonly id="inviteLinkBox" value="${inviteLinkUrl()}" style="flex:1;min-width:240px" onclick="this.select()">
+      <button class="btn btn-y btn-sm" onclick="copyInviteLink()">نسخ الرابط</button>
+      <button class="btn btn-ghost btn-sm" onclick="regenerateInviteToken()">تجديد الرابط (يلغي القديم)</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;margin-top:10px">كل من يفتح هذا الرابط ويدخل رقم هاتفه يُضاف تلقائياً لفريقك بصلاحيات محدودة (يمكنك تعديلها لاحقاً من هنا).</div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">أعضاء الفريق (${members.length})</div>
+    ${members.length? members.map(u=>`
+      <div class="list-item">
+        <div class="li-top"><div><div class="li-title">${esc(u.name)}</div><div class="li-meta mono">${u.phone}</div></div>
+          <div class="li-actions"><button class="btn btn-icon" onclick="removeUser('${u.id}')">✕</button></div></div>
+        <div class="perm-grid">
+          ${Object.keys(PERMISSION_LABELS).map(k=>`
+            <label class="perm-chip"><input type="checkbox" ${u.permissions&&u.permissions[k]?'checked':''} onchange="toggleMemberPermission('${u.id}','${k}',this.checked)"> ${PERMISSION_LABELS[k]}</label>
+          `).join('')}
+        </div>
+      </div>`).join('') : '<div style="font-size:12.5px;color:var(--muted);font-weight:700">لا يوجد أعضاء فريق بعد. شارك رابط الدعوة أعلاه.</div>'}
+  </div>
+  `;
+}
+function copyInviteLink(){
+  const box = document.getElementById('inviteLinkBox');
+  box.select();
+  try{ document.execCommand('copy'); showToast('تم نسخ رابط الدعوة'); }
+  catch(e){ showToast('انسخ الرابط يدوياً من المربع'); }
+}
+async function regenerateInviteToken(){
+  if(!confirm('سيتوقف الرابط القديم عن العمل فوراً. متابعة؟')) return;
+  state.account.inviteToken = uid();
+  await sSet('account:'+state.accountId, state.account);
+  showToast('تم تجديد رابط الدعوة'); renderTeam();
+}
+async function toggleMemberPermission(userId, key, value){
+  const u = state.users.find(x=>x.id===userId);
+  if(!u) return;
+  u.permissions = u.permissions || {...DEFAULT_MEMBER_PERMISSIONS};
+  u.permissions[key] = value;
+  await persist.users();
+  showToast('تم تحديث الصلاحية');
+}
+
+/* ===================== التتبع المباشر GPS ===================== */
+let _trackingListeners=[];
+let _trackingMap=null;
+let _trackingMarkers={};
+function stopTrackingListeners(){
+  _trackingListeners.forEach(l=>l.stop());
+  _trackingListeners=[]; _trackingMarkers={}; _trackingMap=null;
+}
+function renderTracking(){
+  if(state.role!=='admin'){ document.getElementById('mainContent').innerHTML='<div class="card">هذا القسم متاح للمسؤول فقط.</div>'; return; }
+  const trackable = state.users.filter(u=>u.isFieldWorker || u.role==='driver');
+  document.getElementById('mainContent').innerHTML = `
+  <div class="page-head"><div><div class="page-title disp">التتبع المباشر GPS</div><div class="page-sub">يظهر آخر موقع معروف لكل عامل ميداني أو سائق أثناء فتحه للتطبيق على جهازه</div></div></div>
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div class="section-title" style="margin:0">حالة التتبع</div>
+      <label style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="gpsToggle" ${state.account.gpsTrackingEnabled?'checked':''} onchange="toggleGpsTracking(this.checked)">
+        ${state.account.gpsTrackingEnabled?'مُفعّل — التتبع يعمل الآن':'مُوقف'}
+      </label>
+    </div>
+    <div style="font-size:12px;color:var(--muted);font-weight:700;margin-top:6px">هذا الزر خاص بجهازك أنت كمسؤول فقط. الأعضاء المدعوّون عبر رابط الفريق لا يملكون خيار إيقافه من جهازهم.</div>
+  </div>
+  <div class="card">
+    <div id="trackingMap" style="width:100%;height:420px;border-radius:14px;overflow:hidden"></div>
+    ${trackable.length?'':'<div style="font-size:12.5px;color:var(--muted);font-weight:700;margin-top:10px">لا يوجد أعضاء ميدانيون أو سائقون بعد لعرض مواقعهم.</div>'}
+  </div>
+  `;
+  initTrackingMap(trackable);
+}
+function initTrackingMap(trackable){
+  stopTrackingListeners();
+  if(typeof L==='undefined'){ showToast('تعذّر تحميل مكتبة الخرائط — تحقق من الاتصال بالإنترنت', true); return; }
+  const mapEl = document.getElementById('trackingMap');
+  if(!mapEl) return;
+  _trackingMap = L.map('trackingMap').setView([33.3152,44.3661], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(_trackingMap);
+  trackable.forEach(u=>{
+    const listener = sListen('driver_location:'+state.accountId+':'+u.phone, (loc)=>{
+      if(!loc || !_trackingMap) return;
+      if(_trackingMarkers[u.phone]){
+        _trackingMarkers[u.phone].setLatLng([loc.lat, loc.lng]);
+      }else{
+        _trackingMarkers[u.phone] = L.marker([loc.lat, loc.lng]).addTo(_trackingMap).bindPopup(u.name+(loc.updatedAt?'<br><small>'+new Date(loc.updatedAt).toLocaleTimeString('ar')+'</small>':''));
+      }
+    });
+    _trackingListeners.push(listener);
+  });
+}
+async function toggleGpsTracking(enabled){
+  state.account.gpsTrackingEnabled = enabled;
+  await sSet('account:'+state.accountId, state.account);
+  await sSet('gps_enabled:'+state.accountId, enabled);
+  showToast(enabled?'تم تفعيل التتبع':'تم إيقاف التتبع');
+  renderTracking();
+}
+
+/* تتبع تلقائي على جهاز العامل الميداني/السائق المدعو — بدون زر إيقاف عندهم */
+let _gpsWatchId=null;
+let _gpsEnabledListener=null;
+function startGpsAutoTracking(){
+  if(_gpsEnabledListener) return;
+  _gpsEnabledListener = sListen('gps_enabled:'+state.accountId, (enabled)=>{
+    if(enabled) beginWatchingPosition(); else stopWatchingPositionOnly();
+  });
+}
+function stopGpsAutoTracking(){
+  if(_gpsEnabledListener){ _gpsEnabledListener.stop(); _gpsEnabledListener=null; }
+  stopWatchingPositionOnly();
+}
+function beginWatchingPosition(){
+  if(_gpsWatchId!==null || !navigator.geolocation) return;
+  _gpsWatchId = navigator.geolocation.watchPosition(pos=>{
+    const {latitude, longitude} = pos.coords;
+    const me = state.users.find(u=>u.phone===state.phone);
+    sSet('driver_location:'+state.accountId+':'+state.phone, {lat:latitude, lng:longitude, updatedAt:Date.now(), name:(me&&me.name)||''});
+  }, err=>console.error('GPS error', err), {enableHighAccuracy:true, maximumAge:15000, timeout:20000});
+}
+function stopWatchingPositionOnly(){
+  if(_gpsWatchId!==null && navigator.geolocation){ navigator.geolocation.clearWatch(_gpsWatchId); _gpsWatchId=null; }
 }
 
 /* ===================== Settings ===================== */
@@ -1742,7 +2191,14 @@ function renderDriverAdvances(){
 }
 
 /* ===================== Init ===================== */
+populateCountrySelect();
 document.getElementById('loginPhone').addEventListener('keydown', e=>{ if(e.key==='Enter') handlePhoneSubmit(); });
+(function initInviteNotice(){
+  const invite = getInviteFromUrl();
+  if(invite){
+    document.getElementById('loginIntroText').textContent = 'وصلتك دعوة للانضمام إلى فريق عمل. أدخل رقم هاتفك للمتابعة.';
+  }
+})();
 function refreshStorageNotice(){
   const el = document.getElementById('storageModeNotice');
   if(!el) return;
