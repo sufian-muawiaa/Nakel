@@ -1965,6 +1965,38 @@ const PERMISSION_LABELS = {
 /* رابط الموقع المنشور الحقيقي — نستخدمه دائماً لروابط الدعوة بدل عنوان الصفحة الحالية،
    لأن الأخير يكون مساراً محلياً غير صالح للمشاركة عند فتح التطبيق من نسخة EXE أو APK المُغلَّفة */
 const PUBLIC_APP_URL = 'https://sufian-muawiaa.github.io/Nakel/';
+
+/* ===================== إشعار تحديث النظام ===================== */
+/* ⚠️ ارفع هذا الرقم بمقدار 1 مع كل تحديث جديد تنشره على أي من النسخ الثلاث */
+const APP_VERSION = 1;
+
+function isPackagedApp(){
+  return location.protocol==='file:' || location.origin.startsWith('https://localhost') || /Electron/i.test(navigator.userAgent||'');
+}
+let _versionListener=null;
+function startVersionWatch(){
+  if(_versionListener) return;
+  _versionListener = sListen('app_meta:latest_version', async (latest)=>{
+    const latestNum = Number(latest)||0;
+    if(latestNum < APP_VERSION){
+      await sSet('app_meta:latest_version', APP_VERSION);
+    }else if(latestNum > APP_VERSION){
+      showUpdateBanner();
+    }
+  });
+}
+function showUpdateBanner(){
+  if(document.getElementById('updateBanner')) return;
+  const el = document.createElement('div');
+  el.id='updateBanner';
+  el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#F5A524;color:#1a1200;padding:10px 14px;font-weight:800;font-size:13px;text-align:center;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;font-family:inherit;';
+  if(isPackagedApp()){
+    el.innerHTML = '🔄 يتوفر تحديث جديد للتطبيق — يرجى تثبيت أحدث نسخة من الإدارة، أو <a href="'+PUBLIC_APP_URL+'" target="_blank" style="color:#1a1200;text-decoration:underline;font-weight:800">افتح نسخة الموقع المُحدَّثة الآن</a>';
+  }else{
+    el.innerHTML = '🔄 يتوفر تحديث جديد لهذه الصفحة — <button onclick="location.reload()" style="background:#1a1200;color:#fff;border:none;border-radius:8px;padding:5px 14px;font-weight:800;cursor:pointer">تحديث الآن</button>';
+  }
+  document.body.prepend(el);
+}
 function inviteLinkUrl(){
   return PUBLIC_APP_URL + '?invite_a=' + encodeURIComponent(state.accountId) + '&invite_t=' + encodeURIComponent(state.account.inviteToken);
 }
@@ -2234,6 +2266,7 @@ function renderDriverAdvances(){
 /* ===================== Init ===================== */
 populateCountrySelect();
 tryAutoLogin();
+startVersionWatch();
 document.getElementById('loginPhone').addEventListener('keydown', e=>{ if(e.key==='Enter') handlePhoneSubmit(); });
 (function initInviteNotice(){
   const invite = getInviteFromUrl();
