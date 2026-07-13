@@ -1962,9 +1962,11 @@ const PERMISSION_LABELS = {
   vehicles:'الآليات', fleetops:'الصيانة والوقود', invoices:'الفواتير والتحصيل', cash:'الحركة المالية',
   payroll:'الرواتب', reports:'التقارير', settings:'الإعدادات'
 };
+/* رابط الموقع المنشور الحقيقي — نستخدمه دائماً لروابط الدعوة بدل عنوان الصفحة الحالية،
+   لأن الأخير يكون مساراً محلياً غير صالح للمشاركة عند فتح التطبيق من نسخة EXE أو APK المُغلَّفة */
+const PUBLIC_APP_URL = 'https://sufian-muawiaa.github.io/Nakel/';
 function inviteLinkUrl(){
-  const base = window.location.origin + window.location.pathname;
-  return base + '?invite_a=' + encodeURIComponent(state.accountId) + '&invite_t=' + encodeURIComponent(state.account.inviteToken);
+  return PUBLIC_APP_URL + '?invite_a=' + encodeURIComponent(state.accountId) + '&invite_t=' + encodeURIComponent(state.account.inviteToken);
 }
 function renderTeam(){
   if(state.role!=='admin'){ document.getElementById('mainContent').innerHTML='<div class="card">هذا القسم متاح للمسؤول فقط.</div>'; return; }
