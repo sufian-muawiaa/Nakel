@@ -1,0 +1,70 @@
+name: Build Nakel Apps (APK + EXE)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Sync latest app files into Capacitor project
+        run: |
+          mkdir -p capacitor-project/www
+          cp index.html capacitor-project/www/
+          cp *.png *.ico manifest.json capacitor-project/www/
+
+      - name: Install dependencies
+        run: cd capacitor-project && npm install
+
+      - name: Add Android platform
+        run: cd capacitor-project && npx cap add android && npx cap sync android
+
+      - name: Build APK
+        run: |
+          cd capacitor-project/android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nakel-apk
+          path: capacitor-project/android/app/build/outputs/apk/debug/app-debug.apk
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sync latest app files into Electron project
+        shell: bash
+        run: |
+          cp index.html electron-project/
+          cp *.png *.ico manifest.json electron-project/
+
+      - name: Install dependencies
+        run: cd electron-project; npm install
+
+      - name: Build EXE
+        run: cd electron-project; npm run build:win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nakel-exe
+          path: electron-project/dist/*.exe
