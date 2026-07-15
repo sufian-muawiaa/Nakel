@@ -2263,6 +2263,39 @@ function renderDriverAdvances(){
   `;
 }
 
+/* ===================== روابط التحميل الدائمة ===================== */
+/* هذي روابط "Release" ثابتة، تتحدّث تلقائياً لآخر نسخة مع كل بناء ناجح، وتشتغل لأي شخص بدون حساب GitHub */
+const RELEASE_APK_URL = 'https://github.com/sufian-muawiaa/Nakel/releases/download/latest/nakel-android.apk';
+const RELEASE_EXE_URL = 'https://github.com/sufian-muawiaa/Nakel/releases/download/latest/nakel-windows.exe';
+
+function detectPlatform(){
+  const ua = navigator.userAgent||'';
+  if(/android/i.test(ua)) return 'android';
+  if(/windows/i.test(ua)) return 'windows';
+  if(/iphone|ipad|ipod/i.test(ua)) return 'ios';
+  if(/mac/i.test(ua)) return 'mac';
+  return 'other';
+}
+function renderInviteDownloadBox(){
+  const platform = detectPlatform();
+  let html = '';
+  if(platform==='android'){
+    html = `<a href="${RELEASE_APK_URL}" class="btn btn-y btn-block" style="margin-top:10px">📱 حمّل تطبيق أندرويد (APK)</a>
+      <div class="login-toggle">أو تجاهل هذا وأكمل بنسخة الموقع مباشرة بالأسفل</div>`;
+  }else if(platform==='windows'){
+    html = `<a href="${RELEASE_EXE_URL}" class="btn btn-y btn-block" style="margin-top:10px">💻 حمّل نسخة الحاسوب (EXE)</a>
+      <div class="login-toggle">أو تجاهل هذا وأكمل بنسخة الموقع مباشرة بالأسفل</div>`;
+  }else{
+    html = `<div class="login-toggle">لا توجد نسخة مخصصة لجهازك بعد — أكمل بنسخة الموقع بالأسفل مباشرة</div>`;
+  }
+  const box = document.createElement('div');
+  box.id = 'inviteDownloadBox';
+  box.style.cssText = 'margin:14px 0;padding:12px;border:1px dashed var(--line);border-radius:14px;text-align:center;';
+  box.innerHTML = html;
+  const introEl = document.getElementById('loginIntroText');
+  introEl.parentNode.insertBefore(box, introEl.nextSibling);
+}
+
 /* ===================== Init ===================== */
 populateCountrySelect();
 tryAutoLogin();
@@ -2271,7 +2304,8 @@ document.getElementById('loginPhone').addEventListener('keydown', e=>{ if(e.key=
 (function initInviteNotice(){
   const invite = getInviteFromUrl();
   if(invite){
-    document.getElementById('loginIntroText').textContent = 'وصلتك دعوة للانضمام إلى فريق عمل. أدخل رقم هاتفك للمتابعة.';
+    document.getElementById('loginIntroText').textContent = 'وصلتك دعوة للانضمام إلى فريق عمل.';
+    renderInviteDownloadBox();
   }
 })();
 function refreshStorageNotice(){
