@@ -68,3 +68,35 @@ jobs:
         with:
           name: nakel-exe
           path: electron-project/dist/*.exe
+
+  publish-release:
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: nakel-apk
+          path: release-files
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: nakel-exe
+          path: release-files
+
+      - name: Rename files for stable public links
+        run: |
+          mv release-files/app-debug.apk release-files/nakel-android.apk
+          exe_file=$(find release-files -name '*.exe' | head -n1)
+          mv "$exe_file" release-files/nakel-windows.exe
+
+      - name: Publish permanent release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "أحدث نسخة — Nakel"
+          make_latest: true
+          files: release-files/*
