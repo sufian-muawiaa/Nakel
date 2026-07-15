@@ -1,9 +1,11 @@
 {
   "name": "nakel-desktop",
   "version": "1.0.0",
+  "description": "نظام محاسبة وتشغيل النقل اللوجستي - نَكل (نسخة ويندوز)",
   "main": "main.js",
   "scripts": {
-    "build:win": "electron-builder --win portable"
+    "start": "electron .",
+    "build:win": "electron-builder --win nsis"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -12,7 +14,23 @@
   "build": {
     "appId": "com.nakel.logistics.desktop",
     "productName": "نَكل",
-    "win": { "target": "portable", "icon": "favicon.ico" },
-    "files": ["main.js", "index.html", "*.png", "*.ico", "manifest.json"]
+    "win": {
+      "target": "nsis",
+      "icon": "favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "نَكل"
+    },
+    "files": [
+      "main.js",
+      "index.html",
+      "*.png",
+      "*.ico",
+      "manifest.json"
+    ]
   }
 }
